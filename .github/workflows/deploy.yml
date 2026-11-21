@@ -1,0 +1,47 @@
+name: Публікація на calmnessuniverse.art/graditxt
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch: {}     # ручний запуск з вкладки Actions
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Залити на хостинг
+        env:
+          PROTO: ${{ secrets.DEPLOY_PROTOCOL }}   # ftp, ftps або sftp
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}        # необов'язково
+          USER: ${{ secrets.DEPLOY_USER }}
+          LFTP_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          DIR: ${{ secrets.DEPLOY_DIR }}          # повний шлях до папки graditxt на хостингу
+        run: |
+          if [ -z "$HOST" ] || [ -z "$DIR" ]; then
+            echo "::warning::Секрети хостингу ще не додані — пропускаю публікацію."
+            exit 0
+          fi
+          sudo apt-get install -y -qq lftp >/dev/null
+          case "$PROTO" in
+            sftp) SETTINGS="" ;;
+            ftps) SETTINGS="set ftp:ssl-force true; set ftp:ssl-protect-data true;" ;;
+            *)    PROTO=ftp; SETTINGS="" ;;
+          esac
+          PORT_ARG=""; [ -n "$PORT" ] && PORT_ARG="-p $PORT"
+          lftp --env-password -u "$USER" $PORT_ARG "$PROTO://$HOST" -e "
+            $SETTINGS
+            set net:max-retries 3; set net:timeout 30;
+            mkdir -p -f $DIR;
+            mirror --reverse --verbose --parallel=2 --exclude-glob .nojekyll docs $DIR;
+            bye"
