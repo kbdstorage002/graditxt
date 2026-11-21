@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="uk" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Градітекст</title>
+<style>
+  :root{
+    --bg:#f4f2ee; --panel:#ffffff; --ink:#1c1b1a; --muted:#6d6a66; --line:#e3dfd8; --accent:#1c1b1a;
+    --chip:#f6f4f0;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0f0f10; --panel:#18181a; --ink:#ecebe8; --muted:#9a9792; --line:#2a2a2d; --accent:#ecebe8; --chip:#202023;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f0f10; --panel:#18181a; --ink:#ecebe8; --muted:#9a9792; --line:#2a2a2d; --accent:#ecebe8; --chip:#202023;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.45 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .app{display:grid;grid-template-columns:minmax(0,1fr) 340px;min-height:100dvh}
+  .stage{display:flex;align-items:center;justify-content:center;padding:24px;min-width:0}
+  .frame{position:relative;aspect-ratio:var(--ar,1);
+    width:min(100%, calc((100dvh - 48px) * var(--ar,1)));
+    box-shadow:0 20px 60px -20px rgba(0,0,0,.45);border-radius:4px;overflow:hidden;background:#000}
+  .frame canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #ov{pointer-events:none}
+  #tip{position:absolute;pointer-events:none;padding:4px 8px;border-radius:6px;font-size:12px;
+    background:rgba(0,0,0,.72);color:#fff;white-space:nowrap;opacity:0;transition:opacity .12s;transform:translate(12px,12px)}
+  .panel{background:var(--panel);border-left:1px solid var(--line);padding:22px 20px 28px;overflow:auto;max-height:100dvh}
+  h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+  .sub{margin:0 0 18px;color:var(--muted)}
+  label{display:block;font-size:12px;color:var(--muted);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.06em}
+  label span{float:right;text-transform:none;letter-spacing:0}
+  textarea{width:100%;min-height:120px;resize:vertical;padding:10px 12px;border-radius:8px;border:1px solid var(--line);
+    background:var(--bg);color:var(--ink);font:15px/1.45 inherit}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  .row{display:flex;gap:8px;align-items:center}
+  .seg{display:flex;flex-wrap:wrap;gap:4px}
+  .seg button,.btn{border:1px solid var(--line);background:var(--chip);color:var(--ink);padding:6px 10px;border-radius:7px;
+    font:inherit;font-size:13px;cursor:pointer}
+  .seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+  .btn.primary{background:var(--ink);color:var(--panel);border-color:var(--ink);width:100%;padding:10px;margin-top:18px}
+  input[type=number]{width:90px;padding:6px 8px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+  .legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{display:flex;align-items:center;gap:6px;background:var(--chip);border:1px solid var(--line);border-radius:7px;padding:3px 7px 3px 3px;font-size:12px}
+  .sw{width:34px;height:20px;border-radius:4px}
+  .chip b{font-weight:600;min-width:10px;text-align:center}
+  details{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
+  summary{cursor:pointer;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+  .rules{font-size:13px;color:var(--muted);padding-left:16px;margin:8px 0 0}
+  .rules li{margin:3px 0}
+  .rules code{color:var(--ink);font-weight:600}
+  @media (max-width:860px){
+    .app{grid-template-columns:1fr}
+    .stage{padding:16px}
+    .frame{width:100%}
+    .panel{border-left:0;border-top:1px solid var(--line);max-height:none;padding:18px 16px}
+  }
+</style>
+</head>
+<body>
+<main class="app">
+  <section class="stage">
+    <div class="frame" id="frame">
+      <canvas id="cv"></canvas>
+      <canvas id="ov"></canvas>
+      <div id="tip"></div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <h1>Градітекст</h1>
+    <p class="sub">Текст стає полотном. Кожен знак має свій градієнт, а між знаками стоять м’які конектори.</p>
+
+    <label for="txt">Текст <span id="count"></span></label>
+    <textarea id="txt" maxlength="600" spellcheck="false">Світло тече крізь слова, і кожна літера — це колір, що пам’ятає попередній. Пауза дихає; крапка зав’язує вузол. Чи бачиш?</textarea>
+
+    <label>Формат</label>
+    <div class="seg" id="aspect">
+      <button data-v="1:1" aria-pressed="true">1:1</button>
+      <button data-v="4:5">4:5</button>
+      <button data-v="3:2">3:2</button>
+      <button data-v="16:9">16:9</button>
+      <button data-v="9:16">9:16</button>
+    </div>
+
+    <label>Шлях</label>
+    <div class="seg" id="path">
+      <button data-v="snake" aria-pressed="true">Змійка</button>
+      <button data-v="rows">Рядки</button>
+    </div>
+
+    <label>Паузи</label>
+    <div class="seg" id="theme">
+      <button data-v="dark" aria-pressed="true">Темні</button>
+      <button data-v="light">Світлі</button>
+    </div>
+
+    <label for="k">Ширина знака <span id="kV"></span></label>
+    <input id="k" type="range" min="0.4" max="6" step="0.1" value="3.2">
+
+    <label for="soft">М’якість між рядками <span id="softV"></span></label>
+    <input id="soft" type="range" min="0.02" max="1" step="0.01" value="0.28">
+
+    <label for="pulse">Пульс (тінь на межі рядків) <span id="pulseV"></span></label>
+    <input id="pulse" type="range" min="0" max="1" step="0.01" value="0.45">
+
+    <label for="vol">Об’єм (вертикальний нахил) <span id="volV"></span></label>
+    <input id="vol" type="range" min="0" max="2" step="0.05" value="1">
+
+    <label for="grain">Зерно <span id="grainV"></span></label>
+    <input id="grain" type="range" min="0" max="24" step="1" value="5">
+
+    <label for="seed">Палітра (seed)</label>
+    <div class="row">
+      <input id="seed" type="number" value="7" step="1">
+      <button class="btn" id="dice" title="Випадкова палітра">Перемішати</button>
+      <button class="btn" id="letters" aria-pressed="false">Літери</button>
+    </div>
+
+    <button class="btn primary" id="save">Зберегти PNG (3000 px)</button>
+
+    <label>Знаки цього тексту</label>
+    <div class="legend" id="legend"></div>
+
+    <details>
+      <summary>Як працюють конектори</summary>
+      <ul class="rules">
+        <li><code>літера → літера</code>: світловий шов, тобто суміш кінця першої й початку наступної з легким підсиленням насиченості</li>
+        <li><code>пробіл</code>: подих, кольори сусідів тьмяніють і тонуть у фоні пауз</li>
+        <li><code>¶ новий рядок</code>: довгий, глибший подих</li>
+        <li><code>.</code> вузол: різке затягування в найглибший тон</li>
+        <li><code>,</code> м’яке занурення, коротша пауза</li>
+        <li><code>!</code> спалах: майже білий центр, насичені фланги</li>
+        <li><code>?</code> поворот: колір обертається у протилежний відтінок</li>
+        <li><code>: ;</code> пульс: два удари довкола тіні</li>
+        <li><code>- – —</code> міст: чиста інтерполяція, тире ще й трохи підсвічене</li>
+        <li><code>’ « » " “ ”</code> відблиск: вузька бліда іскра</li>
+        <li><code>( ) [ ]</code> тінь: затемнений перехід</li>
+        <li><code>…</code> три маленькі вузли</li>
+      </ul>
+      <p class="rules" style="padding:0;margin-top:8px">Кожна літера має три кольорові точки (вхід, серце, вихід) і вертикальний нахил. Усе це береться з її коду й seed. Велика літера насиченіша й контрастніша за малу, а нахил у неї протилежний. Усі змішування йдуть в OKLab, по шляху працює кубічна Ерміт-інтерполяція.</p>
+    </details>
+  </aside>
+</main>
+
+<script>
+(() => {
+const MAX = 600, S = 48; // max chars, LUT samples per char
+
+/* ---------- color math (OKLab) ---------- */
+const DEG = Math.PI / 180;
+const lch = (L, C, h) => [L, C * Math.cos(h * DEG), C * Math.sin(h * DEG)];
+const mix = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
+const chroma = (p, k) => [p[0], p[1] * k, p[2] * k];
+const light = (p, L) => [L, p[1], p[2]];
+const rot = (p, deg) => { const c = Math.cos(deg * DEG), s = Math.sin(deg * DEG); return [p[0], p[1] * c - p[2] * s, p[1] * s + p[2] * c]; };
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+function labToLin(L, a, b, out) {
+  let l = L + 0.3963377774 * a + 0.2158037573 * b;
+  let m = L - 0.1055613458 * a - 0.0638541728 * b;
+  let s = L - 0.0894841775 * a - 1.2914855480 * b;
+  l = l * l * l; m = m * m * m; s = s * s * s;
+  out[0] = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+  out[1] = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+  out[2] = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
+}
+const GN = 8192, GAMMA = new Float32Array(GN);
+for (let i = 0; i < GN; i++) {
+  const c = i / (GN - 1);
+  GAMMA[i] = 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
+}
+const tmp = [0, 0, 0];
+function labCss(p) {
+  labToLin(p[0], p[1], p[2], tmp);
+  const g = v => Math.round(GAMMA[clamp((v * (GN - 1)) | 0, 0, GN - 1)]);
+  return `rgb(${g(tmp[0])},${g(tmp[1])},${g(tmp[2])})`;
+}
+
+/* ---------- deterministic randomness ---------- */
+function rng(a) {
+  return () => {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------- glyph genome: a unique gradient per character ---------- */
+const genomeCache = new Map();
+function genome(ch, seed) {
+  const key = ch + '|' + seed;
+  if (genomeCache.has(key)) return genomeCache.get(key);
+  const lower = ch.toLowerCase();
+  const upper = ch !== lower;
+  const cp = lower.codePointAt(0);
+  const r = rng(Math.imul(cp, 2654435761) ^ Math.imul(seed + 1, 40503));
+  r(); r();
+  const h1 = r() * 360;
+  const dir = r() < 0.5 ? -1 : 1;
+  const spread = 30 + r() * 90;
+  const hm = h1 + dir * spread * (0.4 + r() * 0.2) + (r() - 0.5) * 20;
+  const h2 = h1 + dir * spread;
+  let L1 = 0.56 + r() * 0.26, L2 = 0.56 + r() * 0.26, Lm = clamp((L1 + L2) / 2 + (r() - 0.5) * 0.24, 0.4, 0.88);
+  let C1 = 0.10 + r() * 0.10, Cm = 0.11 + r() * 0.11, C2 = 0.10 + r() * 0.10;
+  let tH = (r() - 0.5) * 60, tL = (r() - 0.5) * 0.2;
+  if (upper) {
+    const k = v => clamp(0.66 + (v - 0.66) * 1.45, 0.3, 0.92);
+    L1 = k(L1); Lm = k(Lm); L2 = k(L2);
+    C1 *= 1.3; Cm *= 1.35; C2 *= 1.3; tH = -tH * 1.2; tL = -tL * 1.2;
+  }
+  const mk = (L, C, h) => {
+    const p = lch(L, C, h);
+    const q = lch(clamp(L + tL, 0, 1), C, h + tH);
+    return { lab: p, tilt: [q[0] - p[0], q[1] - p[1], q[2] - p[2]] };
+  };
+  const g = { A: mk(L1, C1, h1), M: mk(Lm, Cm, hm), B: mk(L2, C2, h2) };
+  genomeCache.set(key, g);
+  return g;
+}
+
+/* ---------- tokens ---------- */
+const KIND = {
+  ' ': 'space', '\t': 'space', ' ': 'space', '\n': 'break',
+  '.': 'knot', ',': 'dip', '!': 'flash', '?': 'turn', ':': 'pulse', ';': 'pulse2',
+  '-': 'bridge', '–': 'dash', '—': 'dash',
+  '\'': 'glint', '’': 'glint', 'ʼ': 'glint', '`': 'glint', '«': 'glint', '»': 'glint', '"': 'glint', '“': 'glint', '”': 'glint', '„': 'glint',
+  '(': 'shade', ')': 'shade', '[': 'shade', ']': 'shade', '{': 'shade', '}': 'shade',
+  '…': 'ellipsis'
+};
+const LABEL = {
+  glyph: 'градієнт знака', space: 'пробіл: подих', break: 'новий рядок: довгий подих', knot: 'крапка: вузол',
+  dip: 'кома: м’яке занурення', flash: 'знак оклику: спалах', turn: 'знак питання: поворот', pulse: 'двокрапка: пульс',
+  pulse2: 'крапка з комою: пульс і відлуння', bridge: 'дефіс: міст', dash: 'тире: світлий міст', glint: 'лапки/апостроф: відблиск',
+  shade: 'дужка: тінь', ellipsis: 'три крапки: три вузли'
+};
+const kindOf = ch => KIND[ch] || 'glyph';
+
+/* ---------- build the color path ---------- */
+function buildPath(chars, seed, theme) {
+  const n = chars.length;
+  const kinds = chars.map(kindOf);
+  const dark = theme === 'dark';
+  const AMB = dark ? [0.17, 0, 0] : [0.94, 0, 0];
+  const DEEP = dark ? [0.06, 0, 0] : [0.99, 0, 0];
+  const Z = [0, 0, 0];
+
+  const gen = chars.map((c, i) => kinds[i] === 'glyph' ? genome(c, seed) : null);
+  // nearest glyph colors on each side
+  const prevB = new Array(n), nextA = new Array(n);
+  let last = null;
+  for (let i = 0; i < n; i++) { prevB[i] = last; if (gen[i]) last = gen[i].B.lab; }
+  last = null;
+  for (let i = n - 1; i >= 0; i--) { nextA[i] = last; if (gen[i]) last = gen[i].A.lab; }
+  const fallback = lch(dark ? 0.5 : 0.75, 0.08, (seed * 47) % 360);
+
+  const stops = [];
+  const push = (t, lab, tilt = Z) => stops.push([t, lab[0], lab[1], lab[2], tilt[0], tilt[1], tilt[2]]);
+
+  for (let i = 0; i < n; i++) {
+    const k = kinds[i];
+    if (k === 'glyph') {
+      const g = gen[i];
+      push(i + 0.18, g.A.lab, g.A.tilt);
+      push(i + 0.5, g.M.lab, g.M.tilt);
+      push(i + 0.82, g.B.lab, g.B.tilt);
+      // connector to the following glyph: luminous seam
+      if (i + 1 < n && kinds[i + 1] === 'glyph') {
+        const h = gen[i + 1];
+        let seam = mix(g.B.lab, h.A.lab, 0.5);
+        seam = chroma(seam, 1.18); seam[0] = clamp(seam[0] + 0.035, 0, 0.97);
+        push(i + 1, seam, mix(g.B.tilt, h.A.tilt, 0.5));
+      }
+      continue;
+    }
+    const p = prevB[i] || nextA[i] || fallback;
+    const q = nextA[i] || prevB[i] || fallback;
+    const mid = mix(p, q, 0.5);
+    switch (k) {
+      case 'space': push(i + 0.5, mix(mid, AMB, 0.62)); break;
+      case 'break':
+        push(i + 0.3, mix(p, DEEP, 0.75)); push(i + 0.7, mix(q, DEEP, 0.75)); break;
+      case 'knot':
+        push(i + 0.2, mix(p, DEEP, 0.4)); push(i + 0.5, DEEP); push(i + 0.8, mix(q, DEEP, 0.4)); break;
+      case 'dip': push(i + 0.5, mix(mid, AMB, 0.45)); break;
+      case 'flash': {
+        const hot = chroma(light(mid, 0.97), 0.25);
+        push(i + 0.22, chroma(p, 1.45)); push(i + 0.5, hot); push(i + 0.78, chroma(q, 1.45)); break;
+      }
+      case 'turn':
+        push(i + 0.25, rot(p, 70)); push(i + 0.5, chroma(rot(mid, 180), 1.4)); push(i + 0.75, rot(q, -70)); break;
+      case 'pulse':
+        push(i + 0.22, chroma(light(p, clamp(p[0] + 0.15, 0, 0.95)), 1.2));
+        push(i + 0.5, mix(mid, DEEP, 0.7));
+        push(i + 0.78, chroma(light(q, clamp(q[0] + 0.15, 0, 0.95)), 1.2)); break;
+      case 'pulse2':
+        push(i + 0.22, chroma(light(p, clamp(p[0] + 0.15, 0, 0.95)), 1.2));
+        push(i + 0.5, mix(mid, DEEP, 0.7));
+        push(i + 0.78, mix(q, AMB, 0.35)); break;
+      case 'bridge': break; // pure interpolation
+      case 'dash': push(i + 0.5, light(mid, clamp(mid[0] + 0.1, 0, 0.95))); break;
+      case 'glint': {
+        const g = chroma(light(mid, dark ? 0.93 : 0.97), 0.35);
+        push(i + 0.36, mid); push(i + 0.5, g); push(i + 0.64, mid); break;
+      }
+      case 'shade': push(i + 0.5, mix(mid, DEEP, 0.55)); break;
+      case 'ellipsis':
+        push(i + 0.12, p);
+        push(i + 0.25, DEEP); push(i + 0.375, mid); push(i + 0.5, DEEP); push(i + 0.625, mid); push(i + 0.75, DEEP);
+        push(i + 0.88, q); break;
+    }
+  }
+  if (!stops.length) push(0.5, mix(fallback, AMB, 0.5));
+  // anchor ends
+  const first = stops[0], lastS = stops[stops.length - 1];
+  if (first[0] > 0) stops.unshift([0, ...first.slice(1)]);
+  if (lastS[0] < n) stops.push([n, ...lastS.slice(1)]);
+
+  // sample with cubic Hermite (Catmull-Rom style tangents, non-uniform)
+  const N = n * S + 1, lut = new Float32Array(N * 6);
+  const m = stops.length;
+  const tang = stops.map((s, k) => {
+    const a = stops[Math.max(0, k - 1)], b = stops[Math.min(m - 1, k + 1)];
+    const dt = b[0] - a[0] || 1;
+    const out = new Array(6);
+    for (let c = 0; c < 6; c++) out[c] = (b[c + 1] - a[c + 1]) / dt;
+    // flatten tangent at end anchors
+    if (k === 0 || k === m - 1) out.fill(0);
+    return out;
+  });
+  let k = 0;
+  for (let j = 0; j < N; j++) {
+    const t = j / S;
+    while (k < m - 2 && stops[k + 1][0] <= t) k++;
+    const s0 = stops[k], s1 = stops[Math.min(k + 1, m - 1)];
+    const h = s1[0] - s0[0];
+    const u = h > 0 ? clamp((t - s0[0]) / h, 0, 1) : 0;
+    const u2 = u * u, u3 = u2 * u;
+    const h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
+    const m0 = tang[k], m1 = tang[Math.min(k + 1, m - 1)];
+    for (let c = 0; c < 6; c++)
+      lut[j * 6 + c] = h00 * s0[c + 1] + h10 * h * m0[c] + h01 * s1[c + 1] + h11 * h * m1[c];
+  }
+  return { lut, kinds, n };
+}
+
+/* ---------- state & UI ---------- */
+const $ = id => document.getElementById(id);
+const state = { aspect: [1, 1], path: 'snake', theme: 'dark', letters: false };
+const cv = $('cv'), ov = $('ov'), frame = $('frame'), tip = $('tip');
+let layout = null;
+
+function segGroup(id, fn) {
+  const el = $(id);
+  el.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    el.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    fn(b.dataset.v); schedule();
+  });
+}
+segGroup('aspect', v => { state.aspect = v.split(':').map(Number); frame.style.setProperty('--ar', state.aspect[0] / state.aspect[1]); });
+segGroup('path', v => state.path = v);
+segGroup('theme', v => state.theme = v);
+
+const params = () => ({
+  chars: [...$('txt').value].slice(0, MAX),
+  seed: parseInt($('seed').value, 10) || 0,
+  k: +$('k').value, soft: +$('soft').value, pulse: +$('pulse').value, vol: +$('vol').value, grain: +$('grain').value,
+  ...state
+});
+
+function computeLayout(p, W, H) {
+  const chars = p.chars.length ? p.chars : [' '];
+  const n = chars.length;
+  const rows = clamp(Math.round(Math.sqrt(p.k * H * n / W)), 1, Math.min(240, Math.max(1, n * 2)));
+  return { chars, n, rows, L: n / rows, W, H };
+}
+
+function paint(canvas, p, longSide) {
+  const [aw, ah] = p.aspect;
+  const W = aw >= ah ? longSide : Math.round(longSide * aw / ah);
+  const H = ah >= aw ? longSide : Math.round(longSide * ah / aw);
+  canvas.width = W; canvas.height = H;
+  const lay = computeLayout(p, W, H);
+  const { rows, L, n } = lay;
+  const { lut } = buildPath(lay.chars, p.seed, p.theme);
+  lay.kinds = lay.chars.map(kindOf);
+
+  // per-row color lines
+  const rd = new Float32Array(rows * W * 6);
+  const maxJ = n * S;
+  for (let r = 0; r < rows; r++) {
+    const rev = p.path === 'snake' && (r & 1);
+    for (let x = 0; x < W; x++) {
+      let u = (x + 0.5) / W; if (rev) u = 1 - u;
+      const f = (r + u) * L * S;
+      let j = f | 0; const fr = f - j; if (j >= maxJ) j = maxJ - 1;
+      const o = (r * W + x) * 6, a = j * 6, b = a + 6;
+      for (let c = 0; c < 6; c++) rd[o + c] = lut[a + c] + (lut[b + c] - lut[a + c]) * fr;
+    }
+  }
+
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(W, H), d = img.data;
+  const lin = [0, 0, 0];
+  const amp = 1 + p.grain, s = p.soft, vol = p.vol, pulse = p.pulse;
+  for (let y = 0; y < H; y++) {
+    const yr = (y + 0.5) / H * rows;
+    const v = yr - 0.5;
+    const r0 = Math.floor(v), fr = v - r0;
+    const ra = clamp(r0, 0, rows - 1), rb = clamp(r0 + 1, 0, rows - 1);
+    let w = clamp((fr - 0.5) / s + 0.5, 0, 1); w = w * w * (3 - 2 * w);
+    const dA = clamp(yr - ra - 0.5, -0.5, 0.5) * 2 * vol;
+    const dB = clamp(yr - rb - 0.5, -0.5, 0.5) * 2 * vol;
+    const oA = ra * W * 6, oB = rb * W * 6;
+    // pulse: each row swells like a tube, dimming toward its edges
+    const e = Math.abs(yr - Math.floor(yr) - 0.5) * 2;
+    const shade = 1 - pulse * 0.42 * e * e * e;
+    for (let x = 0; x < W; x++) {
+      const a = oA + x * 6, b = oB + x * 6;
+      const L0 = rd[a] + rd[a + 3] * dA, a0 = rd[a + 1] + rd[a + 4] * dA, b0 = rd[a + 2] + rd[a + 5] * dA;
+      const L1 = rd[b] + rd[b + 3] * dB, a1 = rd[b + 1] + rd[b + 4] * dB, b1 = rd[b + 2] + rd[b + 5] * dB;
+      labToLin((L0 + (L1 - L0) * w) * shade, a0 + (a1 - a0) * w, b0 + (b1 - b0) * w, lin);
+      let hsh = Math.imul(x, 374761393) + Math.imul(y, 668265263);
+      hsh = Math.imul(hsh ^ (hsh >>> 13), 1274126177);
+      const nz = (((hsh ^ (hsh >>> 16)) & 1023) / 1023 - 0.5) * amp;
+      const i = (y * W + x) * 4;
+      for (let c = 0; c < 3; c++) {
+        const lv = lin[c];
+        const g = GAMMA[lv <= 0 ? 0 : lv >= 1 ? GN - 1 : (lv * (GN - 1)) | 0];
+        d[i + c] = g + nz;
+      }
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  lay.lut = lut;
+  return lay;
+}
+
+function drawLetters(lay, p) {
+  ov.width = lay.W; ov.height = lay.H;
+  const c = ov.getContext('2d');
+  c.clearRect(0, 0, ov.width, ov.height);
+  if (!state.letters) return;
+  const cellW = lay.W / lay.L, cellH = lay.H / lay.rows;
+  const fs = Math.max(8, Math.min(cellW, cellH) * 0.5);
+  c.font = `500 ${fs}px ui-sans-serif, -apple-system, sans-serif`;
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillStyle = 'rgba(255,255,255,.75)';
+  c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = fs * 0.25;
+  lay.chars.forEach((ch, i) => {
+    const t = i + 0.5, r = Math.min(lay.rows - 1, Math.floor(t / lay.L));
+    let u = t / lay.L - r; if (p.path === 'snake' && (r & 1)) u = 1 - u;
+    const glyph = ch === ' ' ? '·' : ch === '\n' ? '¶' : ch;
+    c.fillText(glyph, clamp(u * lay.W, fs * 0.6, lay.W - fs * 0.6), (r + 0.5) * cellH);
+  });
+}
+
+function legend(lay) {
+  const seen = new Map();
+  lay.chars.forEach((ch, i) => { if (!seen.has(ch) && seen.size < 90) seen.set(ch, i); });
+  const el = $('legend'); el.innerHTML = '';
+  for (const [ch, i] of seen) {
+    const stops = [];
+    for (let s = 0; s <= 8; s++) {
+      const t = clamp(i - 0.25 + s / 8 * 1.5, 0, lay.n);
+      const j = Math.min(Math.round(t * S), lay.n * S) * 6;
+      stops.push(labCss([lay.lut[j], lay.lut[j + 1], lay.lut[j + 2]]));
+    }
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.title = LABEL[kindOf(ch)];
+    const disp = ch === ' ' ? '␣' : ch === '\n' ? '¶' : ch;
+    chip.innerHTML = `<span class="sw" style="background:linear-gradient(90deg,${stops.join(',')})"></span><b></b>`;
+    chip.querySelector('b').textContent = disp;
+    el.appendChild(chip);
+  }
+}
+
+function render() {
+  const p = params();
+  $('count').textContent = `${p.chars.length} / ${MAX}`;
+  $('kV').textContent = p.k.toFixed(1);
+  $('softV').textContent = p.soft.toFixed(2);
+  $('pulseV').textContent = p.pulse.toFixed(2);
+  $('volV').textContent = p.vol.toFixed(2);
+  $('grainV').textContent = p.grain;
+  const cssW = frame.clientWidth, cssH = frame.clientHeight;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const longSide = Math.round(clamp(Math.max(cssW, cssH) * dpr, 400, 1600));
+  layout = paint(cv, p, longSide);
+  layout.path = p.path;
+  drawLetters(layout, p);
+  legend(layout);
+}
+
+let timer = 0;
+function schedule() { clearTimeout(timer); timer = setTimeout(() => requestAnimationFrame(render), 70); }
+['txt', 'seed', 'k', 'soft', 'pulse', 'vol', 'grain'].forEach(id => $(id).addEventListener('input', schedule));
+$('dice').addEventListener('click', () => { $('seed').value = Math.floor(Math.random() * 99999); schedule(); });
+$('letters').addEventListener('click', e => {
+  state.letters = !state.letters; e.currentTarget.setAttribute('aria-pressed', state.letters);
+  e.currentTarget.style.background = state.letters ? 'var(--ink)' : ''; e.currentTarget.style.color = state.letters ? 'var(--panel)' : '';
+  if (layout) drawLetters(layout, params());
+});
+window.addEventListener('resize', schedule);
+
+$('save').addEventListener('click', () => {
+  const p = params();
+  const off = document.createElement('canvas');
+  $('save').textContent = 'Рендеринг…';
+  setTimeout(() => {
+    paint(off, p, 3000);
+    off.toBlob(b => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b);
+      const slug = p.chars.slice(0, 24).join('').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'gradient';
+      a.download = `graditext-${slug}-${p.seed}.png`;
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      $('save').textContent = 'Зберегти PNG (3000 px)';
+    }, 'image/png');
+  }, 30);
+});
+
+frame.addEventListener('mousemove', e => {
+  if (!layout) return;
+  const rc = frame.getBoundingClientRect();
+  const u0 = (e.clientX - rc.left) / rc.width, v = (e.clientY - rc.top) / rc.height;
+  const r = clamp(Math.floor(v * layout.rows), 0, layout.rows - 1);
+  const u = layout.path === 'snake' && (r & 1) ? 1 - u0 : u0;
+  const i = clamp(Math.floor((r + u) * layout.L), 0, layout.n - 1);
+  const ch = layout.chars[i];
+  const disp = ch === ' ' ? '␣' : ch === '\n' ? '¶' : ch;
+  tip.textContent = `«${disp}» · ${LABEL[kindOf(ch)]} · #${i + 1}`;
+  tip.style.left = (e.clientX - rc.left) + 'px'; tip.style.top = (e.clientY - rc.top) + 'px';
+  tip.style.opacity = 1;
+});
+frame.addEventListener('mouseleave', () => tip.style.opacity = 0);
+
+frame.style.setProperty('--ar', 1);
+render();
+})();
+</script>
+</body>
+</html>
