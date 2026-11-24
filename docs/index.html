@@ -58,6 +58,11 @@
     font:inherit;font-size:13px;cursor:pointer}
   .seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
   .btn.primary{background:var(--ink);color:var(--panel);border-color:var(--ink);width:100%;padding:10px;margin-top:18px}
+  .vid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  .vid .btn{padding:10px;font-weight:600;position:relative;overflow:hidden}
+  .vid .btn:disabled{opacity:.45;cursor:default}
+  .vid .btn.busy{background:linear-gradient(90deg,rgba(255,46,99,.35) var(--prog,0%),var(--chip) var(--prog,0%))}
+  .hint{margin:8px 0 0;font-size:12px;color:var(--muted)}
   input[type=number]{width:90px;padding:6px 8px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
   .legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
   .chip{display:flex;align-items:center;gap:6px;background:var(--chip);border:1px solid var(--line);border-radius:7px;padding:3px 7px 3px 3px;font-size:12px}
@@ -139,6 +144,11 @@
     </div>
 
     <button class="btn primary" id="save">Зберегти PNG (3000 px)</button>
+    <div class="vid">
+      <button class="btn" id="vid6" data-sec="6">MP4 · 6 с</button>
+      <button class="btn" id="vid12" data-sec="12">MP4 · 12 с</button>
+    </div>
+    <p class="hint" id="vidHint">Безшовний цикл, 1080 px, 30 кадрів/с. Рендер триває кілька секунд.</p>
 
     <label>Знаки цього тексту</label>
     <div class="legend" id="legend"></div>
@@ -260,6 +270,11 @@ const kindOf = ch => KIND[ch] || 'glyph';
 
 /* ---------- build the color path ---------- */
 // per-occurrence phase for the living palette (deterministic, 0..1)
+// While exporting a video of LOOP seconds, every tempo is snapped to a whole number of
+// cycles in that span, so the last frame flows straight back into the first.
+let LOOP = null;
+const qw = w => LOOP ? Math.max(1, Math.round(w * LOOP / 6.2832)) * 6.2832 / LOOP : w;
+
 function ph(i, k) {
   let h = Math.imul(i * 7 + k + 1, 2654435761);
   h ^= h >>> 15; h = Math.imul(h, 2246822519); h ^= h >>> 13;
@@ -279,8 +294,8 @@ function buildPath(chars, seed, theme, time = null) {
     if (time == null) return c;
     const a = ph(i, k), b = ph(i, k + 11);
     const sp = 0.9 + b * 1.2;          // ~3–7 s per cycle
-    const s1 = Math.sin(time * sp + a * 6.2832);
-    const s2 = Math.sin(time * sp * 0.71 + b * 6.2832);
+    const s1 = Math.sin(time * qw(sp) + a * 6.2832);
+    const s2 = Math.sin(time * qw(sp * 0.71) + b * 6.2832);
     const q = chroma(rot(c, s1 * 34), 1 + s2 * 0.24);
     q[0] = clamp(q[0] + s2 * 0.065, 0, 1);
     return q;
@@ -315,7 +330,7 @@ function buildPath(chars, seed, theme, time = null) {
         const h = gen[i + 1];
         let seam = mix(g.B.lab, h.A.lab, 0.5);
         // seams shimmer while animating
-        const glow = time == null ? 0.035 : 0.035 + 0.075 * Math.sin(time * (2 + ph(i, 3) * 1.6) + ph(i, 4) * 6.2832);
+        const glow = time == null ? 0.035 : 0.035 + 0.075 * Math.sin(time * qw(2 + ph(i, 3) * 1.6) + ph(i, 4) * 6.2832);
         seam = chroma(seam, 1.18); seam[0] = clamp(seam[0] + glow, 0, 0.97);
         push(i + 1, seam, mix(g.B.tilt, h.A.tilt, 0.5));
       }
@@ -334,7 +349,7 @@ function buildPath(chars, seed, theme, time = null) {
       case 'flash': {
         let hot = chroma(light(mid, 0.97), 0.25);
         if (time != null) { // a burst every few seconds
-          const burst = Math.pow(Math.max(0, Math.sin(time * 1.7 + ph(i, 5) * 6.2832)), 14);
+          const burst = Math.pow(Math.max(0, Math.sin(time * qw(1.7) + ph(i, 5) * 6.2832)), 14);
           hot = mix(chroma(mid, 1.2), hot, 0.3 + 0.7 * burst);
         }
         push(i + 0.22, chroma(p, 1.45)); push(i + 0.5, hot); push(i + 0.78, chroma(q, 1.45)); break;
@@ -557,7 +572,7 @@ function tick(now) {
   if (!anim) return;
   const dt = Math.min(0.1, (now - anim.prev) / 1000);   // no jump after a hidden tab
   anim.prev = now; animTime += dt;
-  if (now - anim.drawn >= 33) {    // ~30 fps is plenty for a slow drift
+  if (!exporting && now - anim.drawn >= 33) {    // ~30 fps is plenty for a slow drift
     anim.drawn = now;
     const p = params();
     layout = paint(cv, p, ANIM_SIDE, animTime);
@@ -606,6 +621,97 @@ $('save').addEventListener('click', () => {
     }, 'image/png');
   }, 30);
 });
+
+/* ---------- MP4 export: frame-by-frame, WebCodecs + mp4-muxer ---------- */
+let exporting = null;
+const MUXER_URL = 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.js';
+function loadMuxer() {
+  if (window.Mp4Muxer) return Promise.resolve();
+  return new Promise((ok, fail) => {
+    const sc = document.createElement('script');
+    sc.src = MUXER_URL; sc.onload = ok; sc.onerror = () => fail(new Error('Не вдалося завантажити mp4-muxer'));
+    document.head.appendChild(sc);
+  });
+}
+async function pickCodec(width, height, bitrate) {
+  for (const codec of ['avc1.640028', 'avc1.4d0028', 'avc1.42e028']) {
+    const cfg = { codec, width, height, bitrate, framerate: 30, avc: { format: 'avc' } };
+    try { if ((await VideoEncoder.isConfigSupported(cfg)).supported) return cfg; } catch (e) {}
+  }
+  return null;
+}
+const vidBtns = [$('vid6'), $('vid12')];
+const vidLabel = b => `MP4 · ${b.dataset.sec} с`;
+
+async function exportVideo(btn) {
+  if (exporting) { exporting.cancel = true; return; }
+  if (!('VideoEncoder' in window)) {
+    $('vidHint').textContent = 'Цей браузер не вміє кодувати відео (WebCodecs). Спробуй свіжий Chrome, Edge чи Safari.';
+    return;
+  }
+  const sec = +btn.dataset.sec, fps = 30, total = sec * fps;
+  const p = params();
+  const [aw, ah] = p.aspect;
+  const long = 1080;
+  const even = v => Math.max(2, Math.round(v / 2) * 2);
+  const W = even(aw >= ah ? long : long * aw / ah), H = even(ah >= aw ? long : long * ah / aw);
+  exporting = { cancel: false };
+  vidBtns.forEach(b => { b.disabled = b !== btn; });
+  btn.classList.add('busy');
+  btn.textContent = 'Підготовка…';
+  let encoder = null;
+  try {
+    await loadMuxer();
+    const cfg = await pickCodec(W, H, 14e6);
+    if (!cfg) throw new Error('Браузер не підтримує H.264 для такого розміру');
+    const target = new Mp4Muxer.ArrayBufferTarget();
+    const muxer = new Mp4Muxer.Muxer({ target, video: { codec: 'avc', width: W, height: H, frameRate: fps }, fastStart: 'in-memory' });
+    let encErr = null;
+    encoder = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { encErr = e; } });
+    encoder.configure(cfg);
+    const off = document.createElement('canvas');
+    off.width = W; off.height = H;
+    LOOP = sec;
+    for (let f = 0; f < total; f++) {
+      if (exporting.cancel) throw new Error('cancel');
+      if (encErr) throw encErr;
+      paint(off, p, Math.max(W, H), f / fps);
+      // paint sizes by the long side; force exact even dims for the encoder
+      const frameCanvas = (off.width === W && off.height === H) ? off : (() => {
+        const c = document.createElement('canvas'); c.width = W; c.height = H;
+        c.getContext('2d').drawImage(off, 0, 0, W, H); return c;
+      })();
+      const vf = new VideoFrame(frameCanvas, { timestamp: Math.round(f * 1e6 / fps), duration: Math.round(1e6 / fps) });
+      encoder.encode(vf, { keyFrame: f % (fps * 2) === 0 });
+      vf.close();
+      while (encoder.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 4));
+      const pct = Math.round((f + 1) / total * 100);
+      btn.style.setProperty('--prog', pct + '%');
+      btn.textContent = `Скасувати · ${pct}%`;
+      await new Promise(r => setTimeout(r, 0));   // let the page breathe
+    }
+    btn.textContent = 'Збираю файл…';
+    await encoder.flush();
+    if (encErr) throw encErr;
+    muxer.finalize();
+    const blob = new Blob([target.buffer], { type: 'video/mp4' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const slug = p.chars.slice(0, 24).join('').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'gradient';
+    a.download = `graditext-${slug}-${p.seed}-${sec}s.mp4`;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    $('vidHint').textContent = `Готово: ${W}×${H}, ${sec} с, ${(blob.size / 1048576).toFixed(1)} МБ.`;
+  } catch (e) {
+    if (e.message !== 'cancel') { $('vidHint').textContent = 'Не вийшло: ' + (e.message || e); console.error(e); }
+    else $('vidHint').textContent = 'Скасовано.';
+  } finally {
+    LOOP = null;
+    try { if (encoder && encoder.state !== 'closed') encoder.close(); } catch (e) {}
+    exporting = null;
+    vidBtns.forEach(b => { b.disabled = false; b.classList.remove('busy'); b.style.removeProperty('--prog'); b.textContent = vidLabel(b); });
+  }
+}
+vidBtns.forEach(b => b.addEventListener('click', () => exportVideo(b)));
 
 frame.addEventListener('mousemove', e => {
   if (!layout) return;
