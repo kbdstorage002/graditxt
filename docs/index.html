@@ -29,6 +29,21 @@
   #ov{pointer-events:none}
   #tip{position:absolute;pointer-events:none;padding:4px 8px;border-radius:6px;font-size:12px;
     background:rgba(0,0,0,.72);color:#fff;white-space:nowrap;opacity:0;transition:opacity .12s;transform:translate(12px,12px)}
+  .cta{position:absolute;left:50%;bottom:22px;transform:translate(-50%,14px);opacity:0;pointer-events:none;
+    display:flex;align-items:center;gap:8px;padding:14px 26px;border:0;border-radius:999px;cursor:pointer;
+    font:700 16px/1 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.01em;color:#fff;
+    background:linear-gradient(100deg,#ff2e63,#ff5ac8 45%,#8f3dff 90%);background-size:220% 100%;
+    box-shadow:0 12px 34px -8px rgba(255,46,99,.75),inset 0 0 0 1px rgba(255,255,255,.28);
+    transition:opacity .5s ease,transform .5s cubic-bezier(.2,.9,.3,1.3),filter .2s;
+    animation:ctaShine 5s ease-in-out infinite}
+  .cta.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+  .cta.show:hover{filter:brightness(1.1);transform:translate(-50%,-2px)}
+  .cta:focus-visible{outline:2px solid #fff;outline-offset:3px}
+  .cta.on{background:rgba(10,10,12,.55);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.22);animation:none;font-size:14px;padding:11px 20px}
+  .cta span{font-size:.9em}
+  @keyframes ctaShine{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+  @media (max-width:860px){.cta{bottom:14px;padding:12px 22px;font-size:15px}}
   .panel{background:var(--panel);border-left:1px solid var(--line);padding:22px 20px 28px;overflow:auto;max-height:100dvh}
   h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
   .sub{margin:0 0 18px;color:var(--muted)}
@@ -69,6 +84,7 @@
       <canvas id="cv"></canvas>
       <canvas id="ov"></canvas>
       <div id="tip"></div>
+      <button class="cta" id="animate" aria-pressed="false"><span aria-hidden="true">✦</span> Анімувати</button>
     </div>
   </section>
 
@@ -243,7 +259,14 @@ const LABEL = {
 const kindOf = ch => KIND[ch] || 'glyph';
 
 /* ---------- build the color path ---------- */
-function buildPath(chars, seed, theme) {
+// per-occurrence phase for the living palette (deterministic, 0..1)
+function ph(i, k) {
+  let h = Math.imul(i * 7 + k + 1, 2654435761);
+  h ^= h >>> 15; h = Math.imul(h, 2246822519); h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+
+function buildPath(chars, seed, theme, time = null) {
   const n = chars.length;
   const kinds = chars.map(kindOf);
   const dark = theme === 'dark';
@@ -251,7 +274,24 @@ function buildPath(chars, seed, theme) {
   const DEEP = dark ? [0.06, 0, 0] : [0.99, 0, 0];
   const Z = [0, 0, 0];
 
-  const gen = chars.map((c, i) => kinds[i] === 'glyph' ? genome(c, seed) : null);
+  // living palette: every stop drifts gently around its own color, each at its own tempo
+  const live = (c, i, k) => {
+    if (time == null) return c;
+    const a = ph(i, k), b = ph(i, k + 11);
+    const sp = 0.3 + b * 0.45;
+    const s1 = Math.sin(time * sp + a * 6.2832);
+    const s2 = Math.sin(time * sp * 0.71 + b * 6.2832);
+    const q = chroma(rot(c, s1 * 16), 1 + s2 * 0.12);
+    q[0] = clamp(q[0] + s2 * 0.035, 0, 1);
+    return q;
+  };
+  const gen = chars.map((c, i) => {
+    if (kinds[i] !== 'glyph') return null;
+    const g = genome(c, seed);
+    return { A: { lab: live(g.A.lab, i, 0), tilt: g.A.tilt },
+             M: { lab: live(g.M.lab, i, 1), tilt: g.M.tilt },
+             B: { lab: live(g.B.lab, i, 2), tilt: g.B.tilt } };
+  });
   // nearest glyph colors on each side
   const prevB = new Array(n), nextA = new Array(n);
   let last = null;
@@ -274,7 +314,9 @@ function buildPath(chars, seed, theme) {
       if (i + 1 < n && kinds[i + 1] === 'glyph') {
         const h = gen[i + 1];
         let seam = mix(g.B.lab, h.A.lab, 0.5);
-        seam = chroma(seam, 1.18); seam[0] = clamp(seam[0] + 0.035, 0, 0.97);
+        // seams shimmer while animating
+        const glow = time == null ? 0.035 : 0.035 + 0.04 * Math.sin(time * (0.9 + ph(i, 3) * 0.8) + ph(i, 4) * 6.2832);
+        seam = chroma(seam, 1.18); seam[0] = clamp(seam[0] + glow, 0, 0.97);
         push(i + 1, seam, mix(g.B.tilt, h.A.tilt, 0.5));
       }
       continue;
@@ -290,7 +332,11 @@ function buildPath(chars, seed, theme) {
         push(i + 0.2, mix(p, DEEP, 0.4)); push(i + 0.5, DEEP); push(i + 0.8, mix(q, DEEP, 0.4)); break;
       case 'dip': push(i + 0.5, mix(mid, AMB, 0.45)); break;
       case 'flash': {
-        const hot = chroma(light(mid, 0.97), 0.25);
+        let hot = chroma(light(mid, 0.97), 0.25);
+        if (time != null) { // a burst every few seconds
+          const burst = Math.pow(Math.max(0, Math.sin(time * 0.8 + ph(i, 5) * 6.2832)), 18);
+          hot = mix(chroma(mid, 1.2), hot, 0.3 + 0.7 * burst);
+        }
         push(i + 0.22, chroma(p, 1.45)); push(i + 0.5, hot); push(i + 0.78, chroma(q, 1.45)); break;
       }
       case 'turn':
@@ -382,14 +428,15 @@ function computeLayout(p, W, H) {
   return { chars, n, rows, L: n / rows, W, H };
 }
 
-function paint(canvas, p, longSide) {
+function paint(canvas, p, longSide, time = null) {
   const [aw, ah] = p.aspect;
   const W = aw >= ah ? longSide : Math.round(longSide * aw / ah);
   const H = ah >= aw ? longSide : Math.round(longSide * ah / aw);
-  canvas.width = W; canvas.height = H;
+  if (canvas.width !== W) canvas.width = W;
+  if (canvas.height !== H) canvas.height = H;
   const lay = computeLayout(p, W, H);
   const { rows, L, n } = lay;
-  const { lut } = buildPath(lay.chars, p.seed, p.theme);
+  const { lut } = buildPath(lay.chars, p.seed, p.theme, time);
   lay.kinds = lay.chars.map(kindOf);
 
   // per-row color lines
@@ -494,12 +541,43 @@ function render() {
   $('grainV').textContent = p.grain;
   const cssW = frame.clientWidth, cssH = frame.clientHeight;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const longSide = Math.round(clamp(Math.max(cssW, cssH) * dpr, 400, 1600));
-  layout = paint(cv, p, longSide);
+  const longSide = anim ? ANIM_SIDE : Math.round(clamp(Math.max(cssW, cssH) * dpr, 400, 1600));
+  layout = paint(cv, p, longSide, anim ? animTime : null);
   layout.path = p.path;
   drawLetters(layout, p);
   legend(layout);
+  if (!ctaShown) { ctaShown = true; setTimeout(() => cta.classList.add('show'), 450); }
 }
+
+/* ---------- living palette animation ---------- */
+const ANIM_SIDE = 560;            // rendered smaller, upscaled by the browser: the canvas is soft anyway
+const cta = $('animate');
+let ctaShown = false, anim = null, animTime = 0;
+function tick(now) {
+  if (!anim) return;
+  const dt = Math.min(0.1, (now - anim.prev) / 1000);   // no jump after a hidden tab
+  anim.prev = now; animTime += dt;
+  if (now - anim.drawn >= 33) {    // ~30 fps is plenty for a slow drift
+    anim.drawn = now;
+    const p = params();
+    layout = paint(cv, p, ANIM_SIDE, animTime);
+    layout.path = p.path;
+  }
+  anim.raf = requestAnimationFrame(tick);
+}
+function setAnim(on) {
+  if (on && !anim) {
+    const now = performance.now();
+    anim = { prev: now, drawn: 0, raf: requestAnimationFrame(tick) };
+  } else if (!on && anim) {
+    cancelAnimationFrame(anim.raf); anim = null;
+    render();
+  }
+  cta.classList.toggle('on', !!anim);
+  cta.setAttribute('aria-pressed', !!anim);
+  cta.innerHTML = anim ? '<span aria-hidden="true">❚❚</span> Зупинити' : '<span aria-hidden="true">✦</span> Анімувати';
+}
+cta.addEventListener('click', () => setAnim(!anim));
 
 let timer = 0;
 function schedule() { clearTimeout(timer); timer = setTimeout(() => requestAnimationFrame(render), 70); }
@@ -517,7 +595,7 @@ $('save').addEventListener('click', () => {
   const off = document.createElement('canvas');
   $('save').textContent = 'Рендеринг…';
   setTimeout(() => {
-    paint(off, p, 3000);
+    paint(off, p, 3000, anim ? animTime : null);   // a frame of the animation, if it runs
     off.toBlob(b => {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(b);
