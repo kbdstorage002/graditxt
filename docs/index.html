@@ -152,11 +152,34 @@
     </div>
 
     <button class="btn primary" id="save">Зберегти PNG (3000 px)</button>
+    <label for="speed">Швидкість руху <span id="speedV"></span></label>
+    <input id="speed" type="range" min="0.2" max="3" step="0.05" value="1">
+
+    <label for="amp">Амплітуда руху <span id="ampV"></span></label>
+    <input id="amp" type="range" min="0" max="2.5" step="0.05" value="1">
+
+    <label>Якість відео</label>
+    <div class="seg" id="vq">
+      <button data-v="720">720 px</button>
+      <button data-v="1080" aria-pressed="true">1080 px</button>
+      <button data-v="1440">1440 px</button>
+    </div>
+    <div class="seg" id="vfps" style="margin-top:6px">
+      <button data-v="30" aria-pressed="true">30 кадрів/с</button>
+      <button data-v="60">60 кадрів/с</button>
+    </div>
+
+    <label>Початок відео</label>
+    <div class="seg" id="vstart">
+      <button data-v="loop" aria-pressed="true">Безшовний луп</button>
+      <button data-v="intro">Плавний вхід</button>
+    </div>
+
     <div class="vid">
       <button class="btn" id="vid6" data-sec="6">Відео 6 с</button>
       <button class="btn" id="vid12" data-sec="12">Відео 12 с</button>
     </div>
-    <p class="hint" id="vidHint">Безшовний цикл, 1080 px, 30 кадрів/с. Рендер триває кілька секунд.</p>
+    <p class="hint" id="vidHint"></p>
 
     <label>Знаки цього тексту</label>
     <div class="legend" id="legend"></div>
@@ -291,7 +314,8 @@ function ph(i, k) {
   return (h >>> 0) / 4294967296;
 }
 
-function buildPath(chars, seed, theme, time = null) {
+function buildPath(chars, seed, theme, time = null, motion = { speed: 1, amp: 1 }) {
+  const SPD = motion.speed, AMP = motion.amp;
   const n = chars.length;
   const kinds = chars.map(kindOf);
   const dark = theme === 'dark';
@@ -304,10 +328,10 @@ function buildPath(chars, seed, theme, time = null) {
     if (time == null) return c;
     const a = ph(i, k), b = ph(i, k + 11);
     const sp = 0.9 + b * 1.2;          // ~3–7 s per cycle
-    const s1 = Math.sin(time * qw(sp) + a * 6.2832);
-    const s2 = Math.sin(time * qw(sp * 0.71) + b * 6.2832);
-    const q = chroma(rot(c, s1 * 34), 1 + s2 * 0.24);
-    q[0] = clamp(q[0] + s2 * 0.065, 0, 1);
+    const s1 = Math.sin(time * qw(sp * SPD) + a * 6.2832);
+    const s2 = Math.sin(time * qw(sp * 0.71 * SPD) + b * 6.2832);
+    const q = chroma(rot(c, s1 * 34 * AMP), Math.max(0, 1 + s2 * 0.24 * AMP));
+    q[0] = clamp(q[0] + s2 * 0.065 * AMP, 0, 1);
     return q;
   };
   const gen = chars.map((c, i) => {
@@ -340,7 +364,7 @@ function buildPath(chars, seed, theme, time = null) {
         const h = gen[i + 1];
         let seam = mix(g.B.lab, h.A.lab, 0.5);
         // seams shimmer while animating
-        const glow = time == null ? 0.035 : 0.035 + 0.075 * Math.sin(time * qw(2 + ph(i, 3) * 1.6) + ph(i, 4) * 6.2832);
+        const glow = time == null ? 0.035 : 0.035 + 0.075 * AMP * Math.sin(time * qw((2 + ph(i, 3) * 1.6) * SPD) + ph(i, 4) * 6.2832);
         seam = chroma(seam, 1.18); seam[0] = clamp(seam[0] + glow, 0, 0.97);
         push(i + 1, seam, mix(g.B.tilt, h.A.tilt, 0.5));
       }
@@ -359,8 +383,8 @@ function buildPath(chars, seed, theme, time = null) {
       case 'flash': {
         let hot = chroma(light(mid, 0.97), 0.25);
         if (time != null) { // a burst every few seconds
-          const burst = Math.pow(Math.max(0, Math.sin(time * qw(1.7) + ph(i, 5) * 6.2832)), 14);
-          hot = mix(chroma(mid, 1.2), hot, 0.3 + 0.7 * burst);
+          const burst = Math.pow(Math.max(0, Math.sin(time * qw(1.7 * SPD) + ph(i, 5) * 6.2832)), 14);
+          hot = mix(hot, mix(chroma(mid, 1.2), hot, 0.3 + 0.7 * burst), Math.min(1, AMP));
         }
         push(i + 0.22, chroma(p, 1.45)); push(i + 0.5, hot); push(i + 0.78, chroma(q, 1.45)); break;
       }
@@ -423,7 +447,7 @@ function buildPath(chars, seed, theme, time = null) {
 
 /* ---------- state & UI ---------- */
 const $ = id => document.getElementById(id);
-const state = { aspect: [1, 1], path: 'snake', theme: 'dark', letters: false };
+const state = { aspect: [1, 1], path: 'snake', theme: 'dark', letters: false, vq: 1080, vfps: 30, vstart: 'loop' };
 const cv = $('cv'), ov = $('ov'), frame = $('frame'), tip = $('tip');
 let layout = null;
 
@@ -438,6 +462,19 @@ function segGroup(id, fn) {
 segGroup('aspect', v => { state.aspect = v.split(':').map(Number); frame.style.setProperty('--ar', state.aspect[0] / state.aspect[1]); });
 segGroup('path', v => state.path = v);
 segGroup('theme', v => state.theme = v);
+function vidHint() {
+  $('vidHint').textContent = `${state.vq} px · ${state.vfps} кадрів/с · ` +
+    (state.vstart === 'loop' ? 'безшовний луп.' : 'рух прокидається за 2 с.');
+}
+// video settings don't change the canvas: update the hint only
+function vidSeg(id, key) {
+  const el = $(id);
+  el.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || exporting) return;
+    el.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    state[key] = b.dataset.v; vidHint();
+  });
+}
 
 // split into user-perceived characters, so an emoji with a skin tone stays one sign
 const segmenter = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter('uk', { granularity: 'grapheme' }) : null;
@@ -447,6 +484,7 @@ const params = () => ({
   chars: graphemes($('txt').value).slice(0, MAX),
   seed: parseInt($('seed').value, 10) || 0,
   k: +$('k').value, soft: +$('soft').value, pulse: +$('pulse').value, vol: +$('vol').value, grain: +$('grain').value,
+  speed: +$('speed').value, amp: +$('amp').value,
   ...state
 });
 
@@ -465,7 +503,7 @@ function paint(canvas, p, longSide, time = null) {
   if (canvas.height !== H) canvas.height = H;
   const lay = computeLayout(p, W, H);
   const { rows, L, n } = lay;
-  const { lut } = buildPath(lay.chars, p.seed, p.theme, time);
+  const { lut } = buildPath(lay.chars, p.seed, p.theme, time, { speed: p.speed, amp: p.amp });
   lay.kinds = lay.chars.map(kindOf);
 
   // per-row color lines
@@ -568,6 +606,8 @@ function render() {
   $('pulseV').textContent = p.pulse.toFixed(2);
   $('volV').textContent = p.vol.toFixed(2);
   $('grainV').textContent = p.grain;
+  $('speedV').textContent = '×' + p.speed.toFixed(2);
+  $('ampV').textContent = '×' + p.amp.toFixed(2);
   const cssW = frame.clientWidth, cssH = frame.clientHeight;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const longSide = anim ? ANIM_SIDE : Math.round(clamp(Math.max(cssW, cssH) * dpr, 400, 1600));
@@ -610,7 +650,7 @@ cta.addEventListener('click', () => setAnim(!anim));
 
 let timer = 0;
 function schedule() { clearTimeout(timer); timer = setTimeout(() => requestAnimationFrame(render), 70); }
-['txt', 'seed', 'k', 'soft', 'pulse', 'vol', 'grain'].forEach(id => $(id).addEventListener('input', schedule));
+['txt', 'seed', 'k', 'soft', 'pulse', 'vol', 'grain', 'speed', 'amp'].forEach(id => $(id).addEventListener('input', schedule));
 $('dice').addEventListener('click', () => { $('seed').value = Math.floor(Math.random() * 99999); schedule(); });
 $('letters').addEventListener('click', e => {
   state.letters = !state.letters; e.currentTarget.setAttribute('aria-pressed', state.letters);
@@ -647,9 +687,12 @@ function loadMuxer() {
     document.head.appendChild(sc);
   });
 }
-async function pickCodec(width, height, bitrate) {
-  for (const codec of ['avc1.640028', 'avc1.4d0028', 'avc1.42e028']) {
-    const cfg = { codec, width, height, bitrate, framerate: 30, avc: { format: 'avc' } };
+async function pickCodec(width, height, bitrate, fps) {
+  // H.264 level from frame size and macroblock rate: 4.0 → 4.2 → 5.1
+  const mbs = Math.ceil(width / 16) * Math.ceil(height / 16);
+  const lvl = (mbs <= 8192 && mbs * fps <= 245760) ? '28' : (mbs <= 8704 && mbs * fps <= 522240) ? '2a' : '33';
+  for (const prof of ['6400', '4d00', '4200']) {
+    const cfg = { codec: `avc1.${prof}${lvl}`, width, height, bitrate, framerate: fps, avc: { format: 'avc' } };
     try { if ((await VideoEncoder.isConfigSupported(cfg)).supported) return cfg; } catch (e) {}
   }
   return null;
@@ -663,10 +706,10 @@ async function exportVideo(btn) {
     $('vidHint').textContent = 'Цей браузер не вміє кодувати відео (WebCodecs). Спробуй свіжий Chrome, Edge чи Safari.';
     return;
   }
-  const sec = +btn.dataset.sec, fps = 30, total = sec * fps;
+  const sec = +btn.dataset.sec, fps = +state.vfps, total = sec * fps, intro = state.vstart === 'intro';
   const p = params();
   const [aw, ah] = p.aspect;
-  const long = 1080;
+  const long = +state.vq;
   const even = v => Math.max(2, Math.round(v / 2) * 2);
   const W = even(aw >= ah ? long : long * aw / ah), H = even(ah >= aw ? long : long * ah / aw);
   exporting = { cancel: false };
@@ -676,7 +719,8 @@ async function exportVideo(btn) {
   let encoder = null;
   try {
     await loadMuxer();
-    const cfg = await pickCodec(W, H, 14e6);
+    const bitrate = clamp(14e6 * (W * H) / (1080 * 1080) * Math.pow(fps / 30, 0.6), 4e6, 40e6);
+    const cfg = await pickCodec(W, H, bitrate, fps);
     if (!cfg) throw new Error('Браузер не підтримує H.264 для такого розміру');
     const target = new Mp4Muxer.ArrayBufferTarget();
     const muxer = new Mp4Muxer.Muxer({ target, video: { codec: 'avc', width: W, height: H, frameRate: fps }, fastStart: 'in-memory' });
@@ -689,7 +733,10 @@ async function exportVideo(btn) {
     for (let f = 0; f < total; f++) {
       if (exporting.cancel) throw new Error('cancel');
       if (encErr) throw encErr;
-      paint(off, p, Math.max(W, H), f / fps);
+      const t = f / fps;
+      let env = 1;   // smooth intro: still canvas wakes up over the first 2 s
+      if (intro) { env = clamp(t / 2, 0, 1); env = env * env * (3 - 2 * env); }
+      paint(off, { ...p, amp: p.amp * env }, Math.max(W, H), t);
       // paint sizes by the long side; force exact even dims for the encoder
       const frameCanvas = (off.width === W && off.height === H) ? off : (() => {
         const c = document.createElement('canvas'); c.width = W; c.height = H;
@@ -714,7 +761,7 @@ async function exportVideo(btn) {
     const slug = p.chars.slice(0, 24).join('').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'gradient';
     a.download = `graditext-${slug}-${p.seed}-${sec}s.mp4`;
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    $('vidHint').textContent = `Готово: ${W}×${H}, ${sec} с, ${(blob.size / 1048576).toFixed(1)} МБ.`;
+    $('vidHint').textContent = `Готово: ${W}×${H}, ${fps} кадрів/с, ${sec} с, ${(blob.size / 1048576).toFixed(1)} МБ.`;
   } catch (e) {
     if (e.message !== 'cancel') { $('vidHint').textContent = 'Не вийшло: ' + (e.message || e); console.error(e); }
     else $('vidHint').textContent = 'Скасовано.';
@@ -726,6 +773,7 @@ async function exportVideo(btn) {
   }
 }
 vidBtns.forEach(b => b.addEventListener('click', () => exportVideo(b)));
+vidSeg('vq', 'vq'); vidSeg('vfps', 'vfps'); vidSeg('vstart', 'vstart'); vidHint();
 
 frame.addEventListener('mousemove', e => {
   if (!layout) return;
