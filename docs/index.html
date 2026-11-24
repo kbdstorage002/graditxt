@@ -106,7 +106,7 @@
     <p class="sub">Текст стає полотном. Кожен знак має свій градієнт, а між знаками стоять м’які конектори.</p>
 
     <label for="txt">Текст <span id="count"></span></label>
-    <textarea id="txt" maxlength="600" spellcheck="false">Світло тече крізь слова, і кожна літера — це колір, що пам’ятає попередній. Пауза дихає; крапка зав’язує вузол. Чи бачиш?</textarea>
+    <textarea id="txt" maxlength="600" spellcheck="false">Світло — це ти 🫶🏻</textarea>
 
     <label>Формат</label>
     <div class="seg" id="aspect">
@@ -233,7 +233,9 @@ function genome(ch, seed) {
   if (genomeCache.has(key)) return genomeCache.get(key);
   const lower = ch.toLowerCase();
   const upper = ch !== lower;
-  const cp = lower.codePointAt(0);
+  // one code point → its code; a multi-code-point grapheme (🫶🏻, 👍🏽…) → a hash of all of them
+  const cps = [...lower].map(c => c.codePointAt(0));
+  const cp = cps.length === 1 ? cps[0] : cps.reduce((h, c) => Math.imul(h ^ c, 16777619), 2166136261) >>> 0;
   const r = rng(Math.imul(cp, 2654435761) ^ Math.imul(seed + 1, 40503));
   r(); r();
   const h1 = r() * 360;
@@ -437,8 +439,12 @@ segGroup('aspect', v => { state.aspect = v.split(':').map(Number); frame.style.s
 segGroup('path', v => state.path = v);
 segGroup('theme', v => state.theme = v);
 
+// split into user-perceived characters, so an emoji with a skin tone stays one sign
+const segmenter = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter('uk', { granularity: 'grapheme' }) : null;
+const graphemes = t => segmenter ? Array.from(segmenter.segment(t), x => x.segment) : [...t];
+
 const params = () => ({
-  chars: [...$('txt').value].slice(0, MAX),
+  chars: graphemes($('txt').value).slice(0, MAX),
   seed: parseInt($('seed').value, 10) || 0,
   k: +$('k').value, soft: +$('soft').value, pulse: +$('pulse').value, vol: +$('vol').value, grain: +$('grain').value,
   ...state
