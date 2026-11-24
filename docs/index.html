@@ -6,6 +6,9 @@
 <title>Градітекст — текст у градієнтне полотно</title>
 <meta name="description" content="Градітекст перетворює будь-який текст (до 600 знаків) на градієнтне полотно: кожна літера має власний градієнт, між знаками — плавні конектори. Формати 1:1, 4:5, 16:9, 9:16, анімація і збереження картинки чи відео. Безкоштовно, просто в браузері.">
 <link rel="canonical" href="https://calmnessuniverse.art/graditxt/">
+<link rel="alternate" hreflang="uk" href="https://calmnessuniverse.art/graditxt/">
+<link rel="alternate" hreflang="en" href="https://calmnessuniverse.art/graditxt/en/">
+<link rel="alternate" hreflang="x-default" href="https://calmnessuniverse.art/graditxt/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Calmness Universe">
 <meta property="og:locale" content="uk_UA">
@@ -90,6 +93,10 @@
   .vid .btn:disabled{opacity:.45;cursor:default}
   .vid .btn.busy{background:linear-gradient(90deg,rgba(255,46,99,.45) var(--prog,0%),#1a1a24 var(--prog,0%))}
   .hint{margin:8px 0 0;font-size:12px;color:var(--muted)}
+  .head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .lang{font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--muted);text-decoration:none;
+    border:1px solid var(--line);border-radius:6px;padding:4px 9px}
+  .lang:hover{color:var(--ink);border-color:var(--muted)}
   input[type=number]{width:90px;padding:6px 8px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
   .legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
   .chip{display:flex;align-items:center;gap:6px;background:var(--chip);border:1px solid var(--line);border-radius:7px;padding:3px 7px 3px 3px;font-size:12px}
@@ -121,7 +128,10 @@
   </section>
 
   <aside class="panel">
-    <h1>Градітекст</h1>
+    <div class="head">
+      <h1>Градітекст</h1>
+      <a class="lang" href="en/" hreflang="en" lang="en" title="English">EN</a>
+    </div>
     <p class="sub">Текст стає полотном. Кожен знак має свій градієнт, а між знаками стоять м’які конектори.</p>
 
     <label for="txt">Текст <span id="count"></span></label>

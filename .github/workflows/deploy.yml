@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
+      - 'scripts/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch: {}     # ручний запуск з вкладки Actions
 
@@ -18,6 +19,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
+      - name: Зібрати англійську версію (docs/en/)
+        run: python3 scripts/build_en.py
 
       - name: Залити на хостинг
         env:
