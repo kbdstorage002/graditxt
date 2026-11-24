@@ -278,11 +278,11 @@ function buildPath(chars, seed, theme, time = null) {
   const live = (c, i, k) => {
     if (time == null) return c;
     const a = ph(i, k), b = ph(i, k + 11);
-    const sp = 0.3 + b * 0.45;
+    const sp = 0.9 + b * 1.2;          // ~3–7 s per cycle
     const s1 = Math.sin(time * sp + a * 6.2832);
     const s2 = Math.sin(time * sp * 0.71 + b * 6.2832);
-    const q = chroma(rot(c, s1 * 16), 1 + s2 * 0.12);
-    q[0] = clamp(q[0] + s2 * 0.035, 0, 1);
+    const q = chroma(rot(c, s1 * 34), 1 + s2 * 0.24);
+    q[0] = clamp(q[0] + s2 * 0.065, 0, 1);
     return q;
   };
   const gen = chars.map((c, i) => {
@@ -315,7 +315,7 @@ function buildPath(chars, seed, theme, time = null) {
         const h = gen[i + 1];
         let seam = mix(g.B.lab, h.A.lab, 0.5);
         // seams shimmer while animating
-        const glow = time == null ? 0.035 : 0.035 + 0.04 * Math.sin(time * (0.9 + ph(i, 3) * 0.8) + ph(i, 4) * 6.2832);
+        const glow = time == null ? 0.035 : 0.035 + 0.075 * Math.sin(time * (2 + ph(i, 3) * 1.6) + ph(i, 4) * 6.2832);
         seam = chroma(seam, 1.18); seam[0] = clamp(seam[0] + glow, 0, 0.97);
         push(i + 1, seam, mix(g.B.tilt, h.A.tilt, 0.5));
       }
@@ -334,7 +334,7 @@ function buildPath(chars, seed, theme, time = null) {
       case 'flash': {
         let hot = chroma(light(mid, 0.97), 0.25);
         if (time != null) { // a burst every few seconds
-          const burst = Math.pow(Math.max(0, Math.sin(time * 0.8 + ph(i, 5) * 6.2832)), 18);
+          const burst = Math.pow(Math.max(0, Math.sin(time * 1.7 + ph(i, 5) * 6.2832)), 14);
           hot = mix(chroma(mid, 1.2), hot, 0.3 + 0.7 * burst);
         }
         push(i + 0.22, chroma(p, 1.45)); push(i + 0.5, hot); push(i + 0.78, chroma(q, 1.45)); break;
@@ -550,7 +550,7 @@ function render() {
 }
 
 /* ---------- living palette animation ---------- */
-const ANIM_SIDE = 560;            // rendered smaller, upscaled by the browser: the canvas is soft anyway
+const ANIM_SIDE = 480;            // rendered smaller, upscaled by the browser: the canvas is soft anyway
 const cta = $('animate');
 let ctaShown = false, anim = null, animTime = 0;
 function tick(now) {
